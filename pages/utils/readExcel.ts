@@ -93,7 +93,6 @@ function cellToValue(v: ExcelJS.CellValue): any {
   return String(v);
 }
 
-export function opt<T>(v: T): T | undefined {
-  if (v == null || (typeof v === 'string' && v.trim() === '')) return undefined;
-  return v;
+export function opt(val?: string): string {
+  return (val ?? '').trim();
 }

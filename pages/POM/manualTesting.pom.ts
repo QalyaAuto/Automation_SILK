@@ -3,9 +3,20 @@ import { Page, expect } from "playwright/test";
 export class ManualTesting {
     constructor (private page: Page) {}
 
-    async click_requisito_violato (requisito_violato_codice : string) {
-        await this.page.locator(`(//button[contains(text(),'${requisito_violato_codice}')])[1]`).click();
+    async click_requisito_violato(requisito_violato_codice: string) {
+    const bottoneNonSelezionato = this.page.locator(
+        `//button[@bcauid='testName' and contains(text(), "${requisito_violato_codice}") and not(ancestor::div[@bcauid='selectedTest'])]`
+    );
+
+    const count = await bottoneNonSelezionato.count();
+
+    if (count > 0) {
+        await bottoneNonSelezionato.first().click();
+        console.log(`Requisito "${requisito_violato_codice}" selezionato.`);
+    } else {
+        console.log(`Il requisito "${requisito_violato_codice}" è già selezionato.`);
     }
+}
 
     async click_bug_requisito_violato (requisito_violato_codice : string) {
         await this.page.locator("//button[contains(text(),'"+requisito_violato_codice
@@ -58,6 +69,14 @@ export class ManualTesting {
     }
 
     async scelta_build (build_find : string) {
+        await this.page.waitForTimeout(2_500);
+        const select = this.page.locator("select[aria-label='Build Find :']");
+        const optionsCount = await select.locator("option").count();
+
+        if (optionsCount === 0) {
+            console.log(" Nessuna option disponibile nella select 'Componente'.");
+            return;
+        }
         await this.select_option_per_value_contains("Build Find :",build_find);
         console.log("Build scelta correttamente: "+build_find);
     }
@@ -69,6 +88,7 @@ export class ManualTesting {
     }
 
     async scelta_componente(componente: string) {
+        await this.page.waitForTimeout(3_500);
         const select = this.page.locator("select[aria-label='Componente']");
         const optionsCount = await select.locator("option").count();
 
@@ -88,6 +108,7 @@ export class ManualTesting {
     }
 
     async click_ok_finale() {
+        await this.page.waitForTimeout(3_500);
         const btn = this.page.locator("//button[@id='ok']");
         
         // aspetta che sia visibile
@@ -95,8 +116,21 @@ export class ManualTesting {
         
         // aspetta che sia abilitato (cliccabile)
         await expect(btn).toBeEnabled();
+
+        await btn.click();
         
         console.log("Il bottone OK è visibile e cliccabile.");
+    
+    }
+
+    async click_test_passato () {
+        await this.page.waitForTimeout(2_5000);
+        await this.page.locator("//a[@bcauid='testStatusPassed']").click();
+    }
+
+    async click_test_fallito () {
+        await this.page.waitForTimeout(2_5000);
+        await this.page.locator("//a[@bcauid='testStatusFailed']").click();
     }
 
 
@@ -114,6 +148,7 @@ export class ManualTesting {
 
     }
 }
+
 
 function pulisci_input(text: string): string {
   return text

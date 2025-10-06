@@ -76,9 +76,9 @@ test.describe('Inserimento SILK da datapool', () => {
         await manualPom.click_ok_finale();
 
       } catch (err) {
-        const screenshot = await page.screenshot({ fullPage: true });
+       /* const screenshot = await page.screenshot({ fullPage: true });
         await testInfo.attach(`screenshot-riga-${idx + 1}.png`, { body: screenshot, contentType: 'image/png' });
-        await testInfo.attach(`errore-riga-${idx + 1}.txt`, { body: String(err), contentType: 'text/plain' });
+        await testInfo.attach(`errore-riga-${idx + 1}.txt`, { body: String(err), contentType: 'text/plain' });*/
         throw err;
       } finally {
         await context.close();
