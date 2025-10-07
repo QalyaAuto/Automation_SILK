@@ -1,94 +1,94 @@
-import { Page, expect } from "playwright/test";
+import { Page, Locator } from "playwright/test";
 
 export class ManualTesting {
-    constructor (private page: Page) {}
+  constructor(private page: Page) {}
 
-    async click_requisito_violato(requisito_violato_codice: string) {
-    const bottoneNonSelezionato = this.page.locator(
-        `//button[@bcauid='testName' and contains(text(), "${requisito_violato_codice}") and not(ancestor::div[@bcauid='selectedTest'])]`
-    );
+  // === UTILITY DI BASE ===
 
-    const count = await bottoneNonSelezionato.count();
+  private async retryUntilVisible(locator: Locator, timeout = 10_000, retries = 3): Promise<Locator> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        await locator.waitFor({ state: 'visible', timeout });
+        return locator;
+      } catch (e) {
+        console.warn(`Tentativo ${i + 1}: elemento non visibile, ritento...`);
+        await this.page.waitForTimeout(1500);
+      }
+    }
+    throw new Error("Elemento non visibile dopo tentativi multipli");
+  }
 
+  private async safeClick(locator: Locator) {
+    const el = await this.retryUntilVisible(locator);
+    await el.click();
+  }
+
+  private async safeFill(locator: Locator, value: string) {
+    const el = await this.retryUntilVisible(locator);
+    await el.fill(value);
+  }
+
+
+
+
+  // === METODI RESILIENTI ===
+
+  async click_requisito_violato(codice: string) {
+    const locator = this.page.locator(`//button[@bcauid='testName' and contains(text(), "${codice}") and not(ancestor::div[@bcauid='selectedTest'])]`);
+    const count = await locator.count();
     if (count > 0) {
-        await bottoneNonSelezionato.first().click();
-        console.log(`Requisito "${requisito_violato_codice}" selezionato.`);
+      await this.safeClick(locator.first());
     } else {
-        console.log(`Il requisito "${requisito_violato_codice}" è già selezionato.`);
+      console.log(`⚠️ Requisito "${codice}" già selezionato.`);
     }
-}
+  }
 
-    async click_bug_requisito_violato (requisito_violato_codice : string) {
-        await this.page.locator("//button[contains(text(),'"+requisito_violato_codice
-        +"')]/ancestor::div[@bcauid='selectedTest']//img[@title='Assign or Create Issue']").click();
-    }
+  async apri_bug_requisito_violato(criterio: string) {
+    await this.click_requisito_violato(criterio);
+    await this.page.waitForTimeout(2500);
+    await this.safeClick(this.page.locator(`//button[contains(text(),"${criterio}")]/ancestor::div[@bcauid='selectedTest']//img[@title='Assign or Create Issue']`));
+  }
 
-    async apri_bug_requisito_violato (requisito_violato_codice : string){
-        await this.click_requisito_violato(requisito_violato_codice);
-        await this.page.waitForTimeout(2_500);
-        await this.click_bug_requisito_violato(requisito_violato_codice);
-        console.log("apri nuovo bug requisito violato")
-        
-    }
+  async click_radiobutton_create_new_issue() {
+    await this.safeClick(this.page.locator("//span[label[normalize-space(text())='Create new issue']]//input[@type='radio']"));
+  }
 
-    async click_radiobutton_create_new_issue (){
-        await this.page.locator("//span[label[normalize-space(text())='Create new issue']]//input[@type='radio']").click();
-        console.log("radiobutton 'create new issue' cliccato");
-    }
+  async inserisci_sinossi(titolo: string) {
+    await this.safeFill(this.page.locator("(//div[div[contains(text(),'Synopsis:')]]//input[@type='text'])[1]"), titolo);
+  }
 
-    async inserisci_sinossi (sinossi : string){
-        await this.page.locator("(//div[div[contains(text(),'Synopsis:')]]//input[@type='text'])[1]").fill(sinossi);
-        console.log("Sinossi / Titolo inserito: "+sinossi);
-    }
+  async inserisci_descrizione(descrizione: string) {
+    const locator = this.page.locator("//div[div[contains(text(),'Description:')]]//textarea[@role='textbox']");
+    const el = await this.retryUntilVisible(locator);
+    const oldText = await el.inputValue();
+    const nuovo = oldText ? `${oldText}\n\n${descrizione.trim()}` : descrizione.trim();
+    await el.fill(nuovo);
+  }
 
-    async inserisci_descrizione(descrizione: string) {
-        const textarea = this.page.locator("//div[div[contains(text(),'Description:')]]//textarea[@role='textbox']");
-
-        // leggi il testo già presente
-        const currentValue = await textarea.inputValue();
-        const cleanDescrizione = pulisci_input(descrizione);
-
-        // crea il nuovo testo: quello vecchio + due righe vuote + descrizione nuova
-        const newValue = currentValue 
-            ? `${currentValue}\n\n${cleanDescrizione}` 
-            : cleanDescrizione;
-
-        // riempi la textarea con il nuovo testo
-        await textarea.fill(newValue);
-        console.log("Descrizione correttamente inserita")
-    }
-
-    async scelta_issue () {
+  async scelta_issue () {
         await this.page.locator("select[aria-label='Issue Type:']").selectOption({ value: "BUG" });
         console.log("Tipo issue scelta correttamente: BUG")
     }
 
-    async scelta_prodotto_sw (prodotto_sw : string) {
+
+  async scelta_prodotto_sw (prodotto_sw : string) {
         await this.select_option_per_value_contains("Prodotto SW:",prodotto_sw);
         console.log("prodotto sw scelto correttamente: "+prodotto_sw)
     }
 
     async scelta_build (build_find : string) {
-        await this.page.waitForTimeout(2_500);
-        const select = this.page.locator("select[aria-label='Build Find :']");
-        const optionsCount = await select.locator("option").count();
-
-        if (optionsCount === 0) {
-            console.log(" Nessuna option disponibile nella select 'Componente'.");
-            return;
-        }
         await this.select_option_per_value_contains("Build Find :",build_find);
         console.log("Build scelta correttamente: "+build_find);
     }
 
-    async scelta_ambito () {
+
+  async scelta_ambito () {
         await this.page.waitForTimeout(1_500);
         await this.page.locator("select[aria-label='Ambito Find:']").selectOption({ value: "Ambiente di Collaudo Integrato" });
         console.log("Ambito scelto correttamente: Ambiente di Collaudo Integrato");
     }
 
     async scelta_componente(componente: string) {
-        await this.page.waitForTimeout(3_500);
         const select = this.page.locator("select[aria-label='Componente']");
         const optionsCount = await select.locator("option").count();
 
@@ -107,34 +107,20 @@ export class ManualTesting {
         console.log("Severity scelta correttamente: "+severita+" con numero: "+numero); 
     }
 
-    async click_ok_finale() {
-        await this.page.waitForTimeout(3_500);
-        const btn = this.page.locator("//button[@id='ok']");
-        
-        // aspetta che sia visibile
-        await expect(btn).toBeVisible({ timeout: 10_000 });
-        
-        // aspetta che sia abilitato (cliccabile)
-        await expect(btn).toBeEnabled();
 
-        await btn.click();
-        
-        console.log("Il bottone OK è visibile e cliccabile.");
-    
-    }
+  async click_ok_finale() {
+    await this.safeClick(this.page.locator("//button[@id='ok']"));
+  }
 
-    async click_test_passato () {
-        await this.page.waitForTimeout(2_5000);
-        await this.page.locator("//a[@bcauid='testStatusPassed']").click();
-    }
+  async click_test_passato() {
+    await this.safeClick(this.page.locator("//a[@bcauid='testStatusPassed']"));
+  }
 
-    async click_test_fallito () {
-        await this.page.waitForTimeout(2_5000);
-        await this.page.locator("//a[@bcauid='testStatusFailed']").click();
-    }
+  async click_test_fallito() {
+    await this.safeClick(this.page.locator("//a[@bcauid='testStatusFailed']"));
+  }
 
-
-    async select_option_per_value_contains (aria_label : string, value_contains : string) {
+  async select_option_per_value_contains (aria_label : string, value_contains : string) {
         const select = this.page.locator("select[aria-label='"+aria_label+"']");
         const options = await select.locator("option").all();
 
@@ -147,12 +133,7 @@ export class ManualTesting {
         }
 
     }
-}
 
 
-function pulisci_input(text: string): string {
-  return text
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .trim();
+  
 }
