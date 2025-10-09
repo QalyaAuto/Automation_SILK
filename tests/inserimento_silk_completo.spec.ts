@@ -1,8 +1,6 @@
-// path: tests/inserimento_silk_completo.spec.ts
 import { test, expect } from '@playwright/test';
 import { fileURLToPath } from 'url';
 import path from 'path';
-
 import Login from '../pages/utils/login';
 import { Dashboard } from '../pages/POM/dashboard.pom';
 import Browser_Pages_Handler from '../pages/utils/browser_pages_handler';
@@ -28,8 +26,6 @@ for (const r of tutte_le_righe) {
   (bySdp[sdp] ||= []).push(r);
 }
 
-test.describe.configure({ mode: 'serial' });
-
 test.describe('Verifica criteri per SDP', () => {
   for (const [sdp, righe] of Object.entries(bySdp)) {
     test(`SDP: ${sdp}`, async ({ browser }, testInfo) => {
@@ -41,13 +37,12 @@ test.describe('Verifica criteri per SDP', () => {
       const pagesHandler = new Browser_Pages_Handler(page);
 
       // --- Pause esplicita ---
-      const PAUSE_MS = 2500;
+      const PAUSE_MS = 1000;
       const pause = async () => {
-        // Perché: dare tempo al portale di stabilizzarsi dove serve realmente
         await manualPage.waitForTimeout(PAUSE_MS);
       };
 
-      let manualPage = page;      // verrà riassegnata dopo la navigazione
+      let manualPage = page;
       let manualPom: ManualTesting;
 
       try {
@@ -67,13 +62,12 @@ test.describe('Verifica criteri per SDP', () => {
         const TEST_BTN_XPATH = "//button[@bcauid='testName']";
 
         const waitListStable = async () => {
-          // Perché: la pagina può rerenderare/riaprire; riacquisisci sempre la handle viva.
           manualPage = await pagesHandler.cambia_pagina('/ManualTesting');
           manualPom  = new ManualTesting(manualPage);
           await manualPage.waitForLoadState('domcontentloaded');
           await manualPage.waitForLoadState('networkidle');
           const tests = manualPage.locator(TEST_BTN_XPATH);
-          await expect(tests.first()).toBeVisible({ timeout: 20_000 }); // 1 solo elemento
+          await expect(tests.first()).toBeVisible({ timeout: 20_000 });
           return tests;
         };
 
@@ -101,11 +95,19 @@ test.describe('Verifica criteri per SDP', () => {
 
         for (const label of labels) {
           await test.step(`Processo: ${label}`, async () => {
-            const tests = await waitListStable();                // handle fresca
+            const tests = await waitListStable();
             const labelBtn = tests.filter({ hasText: label }).first();
             await expect(labelBtn).toBeVisible();
 
-            await pause(); // <<< 2.5s PRIMA DI OGNI NUOVO REQUISITO (pass o bug)
+            if (label.startsWith('9.6')) {
+              await pause();
+              await labelBtn.click();
+              await manualPom.click_test_fallito();
+              await waitListStable();
+              return;
+            }
+
+            await pause();
 
             const match = matchCriterio(label);
 
@@ -119,16 +121,16 @@ test.describe('Verifica criteri per SDP', () => {
               await manualPom.inserisci_sinossi(opt(row['Titolo']));
               await manualPom.inserisci_descrizione(opt(row['Descrizione']));
 
-              await pause(); // <<< 2.5s PRIMA DI scelta_issue
+              await pause();
               await manualPom.scelta_issue();
-
               await manualPom.scelta_prodotto_sw(opt(row['AP']));
               await manualPom.scelta_build(opt(row['Build'] ?? ''));
+              await manualPom.scelta_ambito();
               await manualPom.scelta_componente(opt(row['PK']));
               await manualPom.scelta_severity(opt(row['Severity']));
 
-              await pause(); // <<< 2.5s PRIMA DI click_ok_finale
-              await manualPom.click_ok_finale();
+              await pause();
+              await manualPom.click_ok_finale(sdp);
 
               // Torna alla lista e marca fallito sul test corrente
               const testsAfter = await waitListStable();

@@ -39,7 +39,7 @@ export class ManualTesting {
     if (count > 0) {
       await this.safeClick(locator.first());
     } else {
-      console.log(`⚠️ Requisito "${codice}" già selezionato.`);
+      console.log(`Requisito "${codice}" già selezionato.`);
     }
   }
 
@@ -108,8 +108,15 @@ export class ManualTesting {
     }
 
 
-  async click_ok_finale() {
-    await this.safeClick(this.page.locator("//button[@id='ok']"));
+  async click_ok_finale(sdp : string) {
+    if (sdp === "S001") {
+        await this.safeClick(this.page.locator("//button[@id='cancel']"));
+    }else if (sdp === "S002"){
+      await this.safeClick(this.page.locator("//button[@id='cancel']"));
+    }else {
+        await this.safeClick(this.page.locator("//button[@id='cancel']"));
+    }
+    
   }
 
   async click_test_passato() {

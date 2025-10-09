@@ -32,7 +32,6 @@ export default class Browser_Pages_Handler {
   async cambia_pagina(urlPart: string, timeout = 10000): Promise<Page> {
     const targetPage = await this.get_pagina_da_url_pariziale(urlPart, timeout);
     await targetPage.bringToFront();
-    console.log("Switched to page:", targetPage.url());
     return targetPage;
   }
 }
