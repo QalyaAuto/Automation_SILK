@@ -47,6 +47,26 @@ export class Dashboard {
       console.log("filtro con "+INDABOX+ " inserito!")
     }
 
+    async leggi_sdp_visibili(): Promise<string[]> {
+      const header = this.page.locator(
+        "//div[@id='activitiesBorderLayoutcenter-body']//span[normalize-space(text())='Execution Plan']/../.."
+      );
+      await header.waitFor();
+      const colId = await header.getAttribute("id");
+      if (!colId) throw new Error("Colonna 'Execution Plan' non trovata");
+
+      const cells = this.page.locator(
+        `//div[@id='activitiesBorderLayoutcenter-body']//td[contains(@class,'${colId}')]`
+      );
+      const count = await cells.count();
+      const sdps = new Set<string>();
+      for (let i = 0; i < count; i++) {
+        const text = (await cells.nth(i).innerText()).trim();
+        if (text) sdps.add(text.split(/\s+/)[0]);
+      }
+      return [...sdps];
+    }
+
     async click_execution_plan (execution_plan : string) {
       await this.page.waitForTimeout(3_000);
       const header = this.page.locator(

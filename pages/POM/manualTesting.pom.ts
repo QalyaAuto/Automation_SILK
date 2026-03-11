@@ -108,15 +108,38 @@ export class ManualTesting {
     }
 
 
-  async click_ok_finale(sdp : string) {
-    if (sdp === "S001") {
-        await this.safeClick(this.page.locator("//button[@id='cancel']"));
-    }else if (sdp === "S002"){
-      await this.safeClick(this.page.locator("//button[@id='cancel']"));
-    }else {
-        await this.safeClick(this.page.locator("//button[@id='cancel']"));
+  async click_ok_finale(sdp: string) {
+        await this.safeClick(this.page.locator("//button[@id='ok']"));
+  };
+
+  async apri_issues_requisito(criterio: string) {
+    await this.click_requisito_violato(criterio);
+    await this.page.waitForTimeout(2500);
+    await this.safeClick(this.page.locator(`//button[contains(text(),"${criterio}")]/ancestor::div[@bcauid='selectedTest']//img[@bcauid='Issues']`));
+  }
+
+  async leggi_id_da_dialog(): Promise<string> {
+    const dialog = this.page.locator("//div[@bcauid='issuesDialog']");
+    await dialog.waitFor({ state: 'visible' });
+
+    const headers = dialog.locator('thead th');
+    const count = await headers.count();
+    let idColIndex = -1;
+    for (let i = 0; i < count; i++) {
+      const text = await headers.nth(i).innerText();
+      if (text.trim() === 'ID') {
+        idColIndex = i + 1;
+        break;
+      }
     }
-    
+    if (idColIndex === -1) throw new Error('Colonna ID non trovata nel dialog Issues');
+
+    const cell = dialog.locator(`tbody:not([style*="display: none"]) tr:first-child td:nth-child(${idColIndex}) div`);
+    return (await cell.innerText()).trim();
+  }
+
+  async chiudi_dialog_issues() {
+    await this.safeClick(this.page.locator("//div[@bcauid='issuesDialog']//button[@type='button' and normalize-space(text())='Close']"));
   }
 
   async click_test_passato() {

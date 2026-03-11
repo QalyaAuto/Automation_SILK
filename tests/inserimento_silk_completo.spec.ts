@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, BrowserContext, Page } from '@playwright/test';
 import { fileURLToPath } from 'url';
 import path from 'path';
 import Login from '../pages/utils/login';
@@ -12,9 +12,9 @@ test.use({ actionTimeout: 30_000 });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
-const filePath   = path.join(__dirname, '..', 'resources', 'datapool_prova.xlsx');
+const filePath   = path.join(__dirname, '..', 'resources', 'template_silk.xlsx');
 
-const reader = new ReadExcel(filePath, 'Foglio');
+const reader = new ReadExcel(filePath, 'Sheet1');
 await reader.ready;
 const tutte_le_righe: any[] = reader.getAllRows();
 
@@ -26,15 +26,37 @@ for (const r of tutte_le_righe) {
   (bySdp[sdp] ||= []).push(r);
 }
 
-test.describe('Verifica criteri per SDP', () => {
-  for (const [sdp, righe] of Object.entries(bySdp)) {
-    test(`SDP: ${sdp}`, async ({ browser }, testInfo) => {
-      const context = await browser.newContext();
-      const page    = await context.newPage();
+test.describe.serial('Verifica criteri per SDP', () => {
+  let sharedContext: BrowserContext;
+  let sharedPage: Page;
+  let sharedDashboard: Dashboard;
+  let sharedPagesHandler: Browser_Pages_Handler;
 
-      const login        = new Login(page);
-      const dashboard    = new Dashboard(page);
-      const pagesHandler = new Browser_Pages_Handler(page);
+  test.beforeAll(async ({ browser }) => {
+    sharedContext      = await browser.newContext();
+    sharedPage         = await sharedContext.newPage();
+    sharedDashboard    = new Dashboard(sharedPage);
+    sharedPagesHandler = new Browser_Pages_Handler(sharedPage);
+
+    const firstRows = Object.values(bySdp)[0];
+    const inbox     = opt(firstRows[0]?.['INBOX']);
+
+    await test.step('Login unica e navigazione iniziale', async () => {
+      const login = new Login(sharedPage);
+      await login.login();
+      await sharedDashboard.click_su_tracking();
+      await sharedDashboard.gestisci_filtro(inbox);
+    });
+  });
+
+  test.afterAll(async () => {
+    await sharedContext?.close();
+  });
+
+  for (const [sdp, righe] of Object.entries(bySdp)) {
+    test(`SDP: ${sdp}`, async ({}, testInfo) => {
+      const page         = sharedPage;
+      const pagesHandler = sharedPagesHandler;
 
       // --- Pause esplicita ---
       const PAUSE_MS = 1000;
@@ -46,13 +68,8 @@ test.describe('Verifica criteri per SDP', () => {
       let manualPom: ManualTesting;
 
       try {
-        const inbox = opt(righe[0]?.['INBOX']);
-
-        await test.step('Login e navigazione', async () => {
-          await login.login();
-          await dashboard.click_su_tracking();
-          await dashboard.gestisci_filtro(inbox);
-          await dashboard.click_execution_plan(sdp);
+        await test.step('Navigazione execution plan', async () => {
+          await sharedDashboard.click_execution_plan(sdp);
         });
 
         // Vai su ManualTesting
@@ -82,6 +99,12 @@ test.describe('Verifica criteri per SDP', () => {
           if (criterio) mappa.set(criterio, row);
         }
 
+        // MODIFICA 1: flag per gestione 11.7 condizionale
+        const FAIL_SUFFIXES = ['.1.4.3', '.1.4.4', '.1.4.5', '.1.4.12', '.2.4.7'];
+        const ha_codice_speciale = [...mappa.keys()].some(k =>
+          FAIL_SUFFIXES.some(s => k.endsWith(s))
+        );
+
         const matchCriterio = (text: string):
           | { criterio: string; tipo: 'punto1' | 'punto2' | 'esatto' }
           | undefined => {
@@ -103,6 +126,19 @@ test.describe('Verifica criteri per SDP', () => {
               await pause();
               await labelBtn.click();
               await manualPom.click_test_fallito();
+              await waitListStable();
+              return;
+            }
+
+            // MODIFICA 1: gestione 11.7
+            if (label.startsWith('11.7')) {
+              await pause();
+              await labelBtn.click();
+              if (ha_codice_speciale) {
+                await manualPom.click_test_fallito();
+              } else {
+                await manualPom.click_test_passato();
+              }
               await waitListStable();
               return;
             }
@@ -132,6 +168,13 @@ test.describe('Verifica criteri per SDP', () => {
               await pause();
               await manualPom.click_ok_finale(sdp);
 
+              // MODIFICA 3: leggi e salva ID dal dialog Issues
+              await waitListStable();
+              await manualPom.apri_issues_requisito(match.criterio);
+              const idRequisito = await manualPom.leggi_id_da_dialog();
+              await manualPom.chiudi_dialog_issues();
+              await reader.salva_id_requisito(row, idRequisito);
+
               // Torna alla lista e marca fallito sul test corrente
               const testsAfter = await waitListStable();
               const labelBtnAfter = testsAfter.filter({ hasText: label }).first();
@@ -154,9 +197,59 @@ test.describe('Verifica criteri per SDP', () => {
           await testInfo.attach(`sdp-${sdp}-error.txt`, { body: String(err), contentType: 'text/plain' });
         } catch { /* ignore */ }
         throw err;
-      } finally {
-        await context.close();
       }
     });
   }
+
+  // MODIFICA 2: SDP presenti nel portale ma senza bug nel datapool → tutti PASS
+  test('SDP senza bug - tutti PASS', async ({}, testInfo) => {
+    const TEST_BTN_XPATH = "//button[@bcauid='testName']";
+
+    try {
+      const tuttiSdpPortale = await sharedDashboard.leggi_sdp_visibili();
+      const sdpSenzaBug = tuttiSdpPortale.filter(sdp => !(sdp in bySdp));
+
+      for (const sdp of sdpSenzaBug) {
+        await test.step(`SDP senza bug: ${sdp}`, async () => {
+          await sharedDashboard.click_execution_plan(sdp);
+
+          let manualPage = await sharedPagesHandler.cambia_pagina('/ManualTesting');
+          let manualPom = new ManualTesting(manualPage);
+          await manualPage.waitForLoadState('domcontentloaded');
+          await manualPage.waitForLoadState('networkidle');
+
+          const initialTests = manualPage.locator(TEST_BTN_XPATH);
+          await expect(initialTests.first()).toBeVisible({ timeout: 20_000 });
+          const labels = await initialTests.allInnerTexts();
+
+          for (const label of labels) {
+            await test.step(`PASS: ${label}`, async () => {
+              manualPage = await sharedPagesHandler.cambia_pagina('/ManualTesting');
+              manualPom  = new ManualTesting(manualPage);
+              await manualPage.waitForLoadState('domcontentloaded');
+              await manualPage.waitForLoadState('networkidle');
+
+              const btn = manualPage.locator(TEST_BTN_XPATH).filter({ hasText: label }).first();
+              await expect(btn).toBeVisible({ timeout: 20_000 });
+              await btn.click();
+              await manualPom.click_test_passato();
+
+              // attendi stabilizzazione
+              manualPage = await sharedPagesHandler.cambia_pagina('/ManualTesting');
+              manualPom  = new ManualTesting(manualPage);
+              await manualPage.waitForLoadState('networkidle');
+              await expect(manualPage.locator(TEST_BTN_XPATH).first()).toBeVisible({ timeout: 20_000 });
+            });
+          }
+        });
+      }
+    } catch (err) {
+      try {
+        const screenshot = await sharedPage.screenshot({ fullPage: true });
+        await testInfo.attach('sdp-senza-bug-failure.png', { body: screenshot, contentType: 'image/png' });
+        await testInfo.attach('sdp-senza-bug-error.txt', { body: String(err), contentType: 'text/plain' });
+      } catch { /* ignore */ }
+      throw err;
+    }
+  });
 });

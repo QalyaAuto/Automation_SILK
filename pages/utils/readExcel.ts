@@ -5,11 +5,13 @@ export class ReadExcel {
   private sheetName!: string;
   private worksheet!: ExcelJS.Worksheet;
   private data: any[] = [];
+  private filePath: string;
 
 
   public ready: Promise<void>;
 
   constructor(filePath: string, sheetName?: string) {
+    this.filePath = filePath;
     this.ready = (async () => {
       await this.workbook.xlsx.readFile(filePath);
 
@@ -47,7 +49,10 @@ export class ReadExcel {
         }
         // salta righe completamente vuote
         const allEmpty = Object.values(obj).every(v => v === '' || v === null);
-        if (!allEmpty) out.push(obj);
+        if (!allEmpty) {
+          obj['__rowNumber'] = r;
+          out.push(obj);
+        }
       }
 
       this.data = out;
@@ -55,6 +60,30 @@ export class ReadExcel {
   }
 
   
+
+  async salva_id_requisito(rowObj: any, value: string): Promise<void> {
+    const rowNum: number = rowObj['__rowNumber'];
+    if (!rowNum) throw new Error('__rowNumber non trovato nella riga — impossibile salvare id_requisito');
+
+    const headerRow = this.worksheet.getRow(1);
+    const headersArr = (headerRow.values as any[]).slice(1);
+
+    let colIndex = -1;
+    for (let i = 0; i < headersArr.length; i++) {
+      const h = headersArr[i];
+      if (String(h?.text ?? h ?? '').trim() === 'id_requisito') {
+        colIndex = i + 1;
+        break;
+      }
+    }
+    if (colIndex === -1) {
+      colIndex = headersArr.length + 1;
+      this.worksheet.getRow(1).getCell(colIndex).value = 'id_requisito';
+    }
+
+    this.worksheet.getRow(rowNum).getCell(colIndex).value = value;
+    await this.workbook.xlsx.writeFile(this.filePath);
+  }
 
   // Metodo per ottenere tutti i dati
   getAllRows(): any[] {
