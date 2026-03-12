@@ -1,6 +1,7 @@
 import { test, expect, BrowserContext, Page } from '@playwright/test';
 import { fileURLToPath } from 'url';
 import path from 'path';
+import fs from 'fs';
 import Login from '../pages/utils/login';
 import { Dashboard } from '../pages/POM/dashboard.pom';
 import Browser_Pages_Handler from '../pages/utils/browser_pages_handler';
@@ -26,6 +27,17 @@ for (const r of tutte_le_righe) {
   (bySdp[sdp] ||= []).push(r);
 }
 
+// Set di tutti i codici SDP presenti nell'Excel (incluse quelle già completate)
+const tuttiSdpExcel = new Set(Object.keys(bySdp));
+
+// Rimuovi SDP dove tutti i bug sono già stati inseriti (OK)
+for (const sdp of Object.keys(bySdp)) {
+  if (bySdp[sdp].every(r => r['done'] === 'OK')) {
+    console.log(`SDP ${sdp} già completamente processata, saltata.`);
+    delete bySdp[sdp];
+  }
+}
+
 test.describe.serial('Verifica criteri per SDP', () => {
   let sharedContext: BrowserContext;
   let sharedPage: Page;
@@ -33,12 +45,16 @@ test.describe.serial('Verifica criteri per SDP', () => {
   let sharedPagesHandler: Browser_Pages_Handler;
 
   test.beforeAll(async ({ browser }) => {
-    sharedContext      = await browser.newContext();
+    test.setTimeout(2 * 60 * 1000);
+    const sessionPath = path.join(__dirname, '..', 'auth', 'session.json');
+    const hasSession  = fs.existsSync(sessionPath);
+
+    sharedContext = await browser.newContext(hasSession ? { storageState: sessionPath } : {});
     sharedPage         = await sharedContext.newPage();
     sharedDashboard    = new Dashboard(sharedPage);
     sharedPagesHandler = new Browser_Pages_Handler(sharedPage);
 
-    const firstRows = Object.values(bySdp)[0];
+    const firstRows = Object.values(bySdp)[0] ?? tutte_le_righe;
     const inbox     = opt(firstRows[0]?.['INBOX']);
 
     await test.step('Login unica e navigazione iniziale', async () => {
@@ -46,11 +62,17 @@ test.describe.serial('Verifica criteri per SDP', () => {
       await login.login();
       await sharedDashboard.click_su_tracking();
       await sharedDashboard.gestisci_filtro(inbox);
+      await sharedPage.waitForTimeout(3000);
     });
   });
 
   test.afterAll(async () => {
-    await sharedContext?.close();
+    if (sharedContext) {
+      const sessionPath = path.join(__dirname, '..', 'auth', 'session.json');
+      fs.mkdirSync(path.dirname(sessionPath), { recursive: true });
+      await sharedContext.storageState({ path: sessionPath });
+      await sharedContext.close();
+    }
   });
 
   for (const [sdp, righe] of Object.entries(bySdp)) {
@@ -73,6 +95,9 @@ test.describe.serial('Verifica criteri per SDP', () => {
         });
 
         // Vai su ManualTesting
+        console.log(`\n========================================`);
+        console.log(`[INIZIO TEST] Apertura tab ManualTesting — SDP: ${sdp}`);
+        console.log(`========================================`);
         manualPage = await pagesHandler.cambia_pagina('/ManualTesting');
         manualPom  = new ManualTesting(manualPage);
 
@@ -118,6 +143,8 @@ test.describe.serial('Verifica criteri per SDP', () => {
 
         for (const label of labels) {
           await test.step(`Processo: ${label}`, async () => {
+            console.log(`\n----------------------------------------`);
+            console.log(`[REQUISITO] Elaborazione: ${label}`);
             const tests = await waitListStable();
             const labelBtn = tests.filter({ hasText: label }).first();
             await expect(labelBtn).toBeVisible();
@@ -125,7 +152,7 @@ test.describe.serial('Verifica criteri per SDP', () => {
             if (label.startsWith('9.6')) {
               await pause();
               await labelBtn.click();
-              await manualPom.click_test_fallito();
+              await manualPom.imposta_stato_test(label, 'fail');
               await waitListStable();
               return;
             }
@@ -134,11 +161,7 @@ test.describe.serial('Verifica criteri per SDP', () => {
             if (label.startsWith('11.7')) {
               await pause();
               await labelBtn.click();
-              if (ha_codice_speciale) {
-                await manualPom.click_test_fallito();
-              } else {
-                await manualPom.click_test_passato();
-              }
+              await manualPom.imposta_stato_test(label, ha_codice_speciale ? 'fail' : 'pass');
               await waitListStable();
               return;
             }
@@ -150,6 +173,15 @@ test.describe.serial('Verifica criteri per SDP', () => {
             if (match && match.tipo !== 'punto2') {
               const row = mappa.get(match.criterio);
 
+              if (row['done'] === 'OK') {
+                // Bug già inserito in precedenza: salta la creazione, marca solo come fallito
+                console.log(`[BUG GIÀ INSERITO] Criterio: ${match.criterio} — marco direttamente come FAIL`);
+                await pause();
+                await labelBtn.click();
+                await manualPom.imposta_stato_test(label, 'fail');
+                await waitListStable();
+              } else {
+              console.log(`[INIZIO INSERIMENTO BUG] Criterio: ${match.criterio} — Label: ${label}`);
               // Apertura bug per requisito violato
               await manualPom.apri_bug_requisito_violato(match.criterio);
               await manualPom.click_radiobutton_create_new_issue();
@@ -166,30 +198,37 @@ test.describe.serial('Verifica criteri per SDP', () => {
               await manualPom.scelta_severity(opt(row['Severity']));
 
               await pause();
-              await manualPom.click_ok_finale(sdp);
+              await manualPom.click_ok_finale();
 
-              // MODIFICA 3: leggi e salva ID dal dialog Issues
+              // leggi e salva ID dal dialog Issues
               await waitListStable();
               await manualPom.apri_issues_requisito(match.criterio);
               const idRequisito = await manualPom.leggi_id_da_dialog();
               await manualPom.chiudi_dialog_issues();
-              await reader.salva_id_requisito(row, idRequisito);
+              await reader.segna_ok(row);
+              reader.salva_id_su_file(row, idRequisito);
+              console.log(`[FINE INSERIMENTO BUG] Criterio: ${match.criterio} — ID: ${idRequisito} — Excel aggiornato con OK`);
 
               // Torna alla lista e marca fallito sul test corrente
               const testsAfter = await waitListStable();
               const labelBtnAfter = testsAfter.filter({ hasText: label }).first();
               await expect(labelBtnAfter).toBeVisible();
               await manualPom.click_requisito_violato(label);
-              await manualPom.click_test_fallito();
+              await manualPom.imposta_stato_test(label, 'fail');
               await waitListStable();
+              }
             } else {
               // Success path
               await labelBtn.click();
-              await manualPom.click_test_passato();
+              await manualPom.imposta_stato_test(label, 'pass');
               await waitListStable();
             }
+            console.log(`[FINE TEST] Completato: ${label}`);
           });
         }
+        console.log(`\n========================================`);
+        console.log(`[FINE TEST] SDP ${sdp} completata.`);
+        console.log(`========================================\n`);
       } catch (err) {
         try {
           const screenshot = await page.screenshot({ fullPage: true });
@@ -207,7 +246,7 @@ test.describe.serial('Verifica criteri per SDP', () => {
 
     try {
       const tuttiSdpPortale = await sharedDashboard.leggi_sdp_visibili();
-      const sdpSenzaBug = tuttiSdpPortale.filter(sdp => !(sdp in bySdp));
+      const sdpSenzaBug = tuttiSdpPortale.filter(sdp => !tuttiSdpExcel.has(sdp));
 
       for (const sdp of sdpSenzaBug) {
         await test.step(`SDP senza bug: ${sdp}`, async () => {
@@ -218,9 +257,24 @@ test.describe.serial('Verifica criteri per SDP', () => {
           await manualPage.waitForLoadState('domcontentloaded');
           await manualPage.waitForLoadState('networkidle');
 
-          const initialTests = manualPage.locator(TEST_BTN_XPATH);
-          await expect(initialTests.first()).toBeVisible({ timeout: 20_000 });
-          const labels = await initialTests.allInnerTexts();
+          // La pagina può ricaricare il DOM dopo networkidle — retry se il contesto viene distrutto
+          let labels: string[] = [];
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              await manualPage.waitForLoadState('networkidle');
+              const initialTests = manualPage.locator(TEST_BTN_XPATH);
+              await expect(initialTests.first()).toBeVisible({ timeout: 20_000 });
+              labels = await initialTests.allInnerTexts();
+              break;
+            } catch (e: any) {
+              if (attempt < 2 && e.message?.includes('context was destroyed')) {
+                manualPage = await sharedPagesHandler.cambia_pagina('/ManualTesting');
+                manualPom  = new ManualTesting(manualPage);
+              } else {
+                throw e;
+              }
+            }
+          }
 
           for (const label of labels) {
             await test.step(`PASS: ${label}`, async () => {
@@ -232,7 +286,7 @@ test.describe.serial('Verifica criteri per SDP', () => {
               const btn = manualPage.locator(TEST_BTN_XPATH).filter({ hasText: label }).first();
               await expect(btn).toBeVisible({ timeout: 20_000 });
               await btn.click();
-              await manualPom.click_test_passato();
+              await manualPom.imposta_stato_test(label, 'pass');
 
               // attendi stabilizzazione
               manualPage = await sharedPagesHandler.cambia_pagina('/ManualTesting');

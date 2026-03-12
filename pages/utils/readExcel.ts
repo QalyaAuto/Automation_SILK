@@ -1,4 +1,6 @@
 import ExcelJS from 'exceljs';
+import fs from 'fs';
+import path from 'path';
 
 export class ReadExcel {
   private workbook = new ExcelJS.Workbook();
@@ -6,6 +8,8 @@ export class ReadExcel {
   private worksheet!: ExcelJS.Worksheet;
   private data: any[] = [];
   private filePath: string;
+  private headers: string[] = [];
+  private readonly runId: string = new Date().toISOString().slice(0, 16).replace(/[^0-9]/g, '');
 
 
   public ready: Promise<void>;
@@ -36,6 +40,8 @@ export class ReadExcel {
         .map(v => (v && (v.text ?? v)))
         .map(v => (v == null ? '' : String(v).trim()));
 
+      this.headers = headers;
+
       const out: any[] = [];
       for (let r = 2; r <= this.worksheet.rowCount; r++) {
         const row = this.worksheet.getRow(r);
@@ -61,9 +67,9 @@ export class ReadExcel {
 
   
 
-  async salva_id_requisito(rowObj: any, value: string): Promise<void> {
+  async segna_ok(rowObj: any): Promise<void> {
     const rowNum: number = rowObj['__rowNumber'];
-    if (!rowNum) throw new Error('__rowNumber non trovato nella riga — impossibile salvare id_requisito');
+    if (!rowNum) throw new Error('__rowNumber non trovato — impossibile segnare OK');
 
     const headerRow = this.worksheet.getRow(1);
     const headersArr = (headerRow.values as any[]).slice(1);
@@ -71,18 +77,45 @@ export class ReadExcel {
     let colIndex = -1;
     for (let i = 0; i < headersArr.length; i++) {
       const h = headersArr[i];
-      if (String(h?.text ?? h ?? '').trim() === 'id_requisito') {
+      if (String(h?.text ?? h ?? '').trim() === 'done') {
         colIndex = i + 1;
         break;
       }
     }
     if (colIndex === -1) {
       colIndex = headersArr.length + 1;
-      this.worksheet.getRow(1).getCell(colIndex).value = 'id_requisito';
+      this.worksheet.getRow(1).getCell(colIndex).value = 'done';
     }
 
-    this.worksheet.getRow(rowNum).getCell(colIndex).value = value;
-    await this.workbook.xlsx.writeFile(this.filePath);
+    this.worksheet.getRow(rowNum).getCell(colIndex).value = 'OK';
+
+    // Retry in caso di file locked (es. OneDrive in sync o Excel aperto)
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      try {
+        await this.workbook.xlsx.writeFile(this.filePath);
+        return;
+      } catch (err: any) {
+        if (err.code === 'EBUSY' && attempt < 5) {
+          console.warn(`[segna_ok] File occupato, riprovo tra 2s (tentativo ${attempt}/5)...`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
+
+  salva_id_su_file(row: any, id: string): void {
+    const primaColonna = this.headers[0];
+    const chiave = `${this.runId}_${String(row[primaColonna] ?? row['__rowNumber']).trim()}`;
+    const jsonPath = path.join(path.dirname(this.filePath), 'issue_ids.json');
+
+    let data: Record<string, string> = {};
+    if (fs.existsSync(jsonPath)) {
+      data = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
+    }
+    data[chiave] = id;
+    fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
   // Metodo per ottenere tutti i dati
