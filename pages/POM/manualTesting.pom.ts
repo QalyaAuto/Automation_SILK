@@ -141,23 +141,45 @@ export class ManualTesting {
   }
 
   async verifica_errore_silk_central(): Promise<string | null> {
-    // Attende un breve momento per dare tempo alla modale di apparire
-    await this.page.waitForTimeout(1_000);
-    const dialog = this.page.locator('div').filter({ hasText: 'Silk Central Message' }).last();
-    const isVisible = await dialog.isVisible().catch(() => false);
-    if (!isVisible) return null;
-    // Legge il messaggio di errore per il log
-    const message = await dialog.innerText().catch(() => 'messaggio non leggibile');
-    return message.replace('Silk Central Message', '').trim();
+    // Race: aspetta che newIssueDialog si chiuda (successo) OPPURE che appaia "Silk Central Message" (errore)
+    // Non serve waitForTimeout fisso: reagiamo appena uno dei due eventi si verifica
+    const outcome = await this.page.waitForFunction(() => {
+      const modal = document.querySelector("[bcauid='newIssueDialog']") as HTMLElement | null;
+      const modalClosed = !modal || modal.style.visibility !== 'visible';
+      const hasError = document.body.innerText.includes('Silk Central Message');
+      if (modalClosed || hasError) return hasError ? 'error' : 'success';
+      return null; // ancora in attesa
+    }, { timeout: 15_000 }).catch(() => null);
+
+    const result = await outcome?.jsonValue().catch(() => null);
+
+    if (result !== 'error') return null; // successo o timeout irrisolvibile
+
+    // Leggi il testo dell'errore dalla modale Silk Central per il log
+    const errorMsg = await this.page.evaluate(() => {
+      const allText = Array.from(document.querySelectorAll('*'))
+        .find(el => el.textContent?.includes('Silk Central Message') &&
+                    (el as HTMLElement).offsetParent !== null); // visibile
+      return allText?.textContent?.replace('Silk Central Message', '').trim() ?? 'errore non leggibile';
+    }).catch(() => 'errore non leggibile');
+
+    return errorMsg;
   }
 
   async chiudi_errore_e_annulla(): Promise<void> {
-    // Clicca OK nella modale "Silk Central Message"
-    const errorDialog = this.page.locator('div').filter({ hasText: 'Silk Central Message' }).last();
-    await this.safeClick(errorDialog.locator('button').filter({ hasText: /^OK$/ }));
-    await this.page.waitForTimeout(500);
-    // Clicca Cancel sul form principale per chiuderlo
+    // Clicca OK nella modale di errore Silk Central
+    // Il button del form principale ha id="ok" e bcauid="ok" — quello dell'errore no
+    const okErrore = this.page.locator('button:not([id="ok"]):not([bcauid="ok"])').filter({ hasText: /^OK$/ }).first();
+    await this.safeClick(okErrore);
+    // Attende che la modale di errore sparisca
+    await this.page.waitForFunction(
+      () => !document.body.innerText.includes('Silk Central Message'),
+      { timeout: 5_000 }
+    ).catch(() => {});
+    // Clicca Cancel sul form principale (newIssueDialog ancora aperto)
     await this.safeClick(this.page.locator("button[bcauid='cancel']"));
+    // Attende che newIssueDialog si chiuda
+    await this.page.locator("[bcauid='newIssueDialog']").waitFor({ state: 'hidden', timeout: 5_000 }).catch(() => {});
   }
 
   async apri_issues_requisito(criterio: string) {
