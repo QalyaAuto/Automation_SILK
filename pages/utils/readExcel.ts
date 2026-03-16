@@ -108,13 +108,17 @@ export class ReadExcel {
   salva_id_su_file(row: any, id: string): void {
     const primaColonna = this.headers[0];
     const chiave = `${this.runId}_${String(row[primaColonna] ?? row['__rowNumber']).trim()}`;
-    const jsonPath = path.join(path.dirname(this.filePath), 'issue_ids.json');
+    const jsonPath = path.join(path.dirname(this.filePath), `issue_ids_${this.runId}.json`);
+
+    // Estrai solo il primo numero a 4 cifre dalla stringa grezza
+    const match = id.match(/\b\d{4}\b/);
+    const idPulito = match ? match[0] : id.trim();
 
     let data: Record<string, string> = {};
     if (fs.existsSync(jsonPath)) {
       data = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
     }
-    data[chiave] = id;
+    data[chiave] = idPulito;
     fs.writeFileSync(jsonPath, JSON.stringify(data, null, 2), 'utf-8');
   }
 
