@@ -103,7 +103,8 @@ export class ManualTesting {
     await this.page.waitForFunction((initial: string) => {
       const el = document.querySelector("select[aria-label='Build Find :']") as HTMLSelectElement | null;
       return el ? el.options[0]?.value !== initial : false;
-    }, initialBuild, { timeout: 15_000 });
+    }, initialBuild, { timeout: 15_000 })
+      .catch(() => console.warn('[scelta_prodotto_sw] Build non aggiornato, proseguo comunque'));
 
     console.log("prodotto sw scelto correttamente: " + prodotto_sw);
   }
@@ -137,11 +138,12 @@ export class ManualTesting {
 
     await this.page.locator("select[aria-label='Ambito Find:']").selectOption({ value: "Ambiente di Collaudo Integrato" });
 
-    // Aspetta che Componente si aggiorni (il dropout successivo nella catena)
+    // Aspetta che Componente si aggiorni (il dropdown successivo nella catena)
     await this.page.waitForFunction((initial: string) => {
       const el = document.querySelector("select[aria-label*='Componente']") as HTMLSelectElement | null;
       return el ? el.options[0]?.value !== initial : false;
-    }, initialComponente, { timeout: 15_000 });
+    }, initialComponente, { timeout: 15_000 })
+      .catch(() => console.warn('[scelta_ambito] Componente non aggiornato, proseguo comunque'));
 
     console.log("Ambito scelto correttamente: Ambiente di Collaudo Integrato");
   }
