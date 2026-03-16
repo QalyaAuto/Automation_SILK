@@ -125,7 +125,7 @@ export class ManualTesting {
       await select.selectOption({ value: TARGET });
 
       // Attende 1s per dare tempo al server di eventualmente resettare il valore
-      await this.page.waitForTimeout(1_000);
+      await this.page.waitForTimeout(2_500);
 
       const actual = await select.inputValue().catch(() => 'non leggibile');
       console.log(`[ambito] Valore dopo ${attempt}s di attesa: "${actual}"`);
@@ -211,9 +211,14 @@ export class ManualTesting {
   }
 
   async chiudi_errore_e_annulla(): Promise<void> {
-    // Clicca OK nella modale di errore Silk Central
-    // Il button del form principale ha id="ok" e bcauid="ok" — quello dell'errore no
-    const okErrore = this.page.locator('button:not([id="ok"]):not([bcauid="ok"])').filter({ hasText: /^OK$/ }).first();
+    // Trova il contenitore comune che ha sia "Silk Central Message" sia un button OK,
+    // poi clicca il button OK dentro di esso — robusto indipendentemente dalla struttura DOM
+    const modaleErrore = this.page.locator('*').filter({
+      hasText: /Silk Central Message/,
+    }).filter({
+      has: this.page.locator('button').filter({ hasText: /^OK$/ }),
+    }).last(); // .last() = elemento più interno che soddisfa entrambi i criteri
+    const okErrore = modaleErrore.locator('button').filter({ hasText: /^OK$/ }).first();
     await this.safeClick(okErrore);
     // Attende che la modale di errore sparisca
     await this.page.waitForFunction(
