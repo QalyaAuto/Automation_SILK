@@ -182,23 +182,47 @@ test.describe.serial('Verifica criteri per SDP', () => {
                 await waitListStable();
               } else {
               console.log(`[INIZIO INSERIMENTO BUG] Criterio: ${match.criterio} — Label: ${label}`);
-              // Apertura bug per requisito violato
-              await manualPom.apri_bug_requisito_violato(match.criterio);
-              await manualPom.click_radiobutton_create_new_issue();
 
-              await manualPom.inserisci_sinossi(opt(row['Titolo']));
-              await manualPom.inserisci_descrizione(opt(row['Descrizione']));
+              const MAX_RETRY = 3;
+              let inserito = false;
 
-              await pause();
-              await manualPom.scelta_issue();
-              await manualPom.scelta_prodotto_sw(opt(row['AP']));
-              await manualPom.scelta_build(opt(row['Build'] ?? ''));
-              await manualPom.scelta_ambito();
-              await manualPom.scelta_componente(opt(row['PK']));
-              await manualPom.scelta_severity(opt(row['Severity']));
+              for (let tentativo = 1; tentativo <= MAX_RETRY && !inserito; tentativo++) {
+                if (tentativo > 1) {
+                  console.warn(`[RETRY ${tentativo}/${MAX_RETRY}] Riprovo inserimento per ${match.criterio}`);
+                  await waitListStable();
+                }
 
-              await pause();
-              await manualPom.click_ok_finale();
+                await manualPom.apri_bug_requisito_violato(match.criterio);
+                await manualPom.click_radiobutton_create_new_issue();
+
+                await manualPom.inserisci_sinossi(opt(row['Titolo']));
+                await manualPom.inserisci_descrizione(opt(row['Descrizione']));
+  
+                
+                await pause();
+                await manualPom.scelta_issue();
+                await manualPom.scelta_prodotto_sw(opt(row['AP']));
+                await manualPom.scelta_build(opt(row['Build'] ?? ''));
+                await manualPom.scelta_ambito();
+                await manualPom.scelta_componente(opt(row['PK']));
+                await manualPom.scelta_severity(opt(row['Severity']));
+
+                await pause();
+                await manualPom.click_ok_finale();
+
+                const erroreMsg = await manualPom.verifica_errore_silk_central();
+                if (erroreMsg !== null) {
+                  console.warn(`[RETRY] Silk Central Message: "${erroreMsg}" — chiudo e riprovo (tentativo ${tentativo}/${MAX_RETRY})`);
+                  await manualPom.chiudi_errore_e_annulla();
+                  continue;
+                }
+
+                inserito = true;
+              }
+
+              if (!inserito) {
+                throw new Error(`[INSERIMENTO] Impossibile inserire il bug per ${match.criterio} dopo ${MAX_RETRY} tentativi: componente non valido`);
+              }
 
               // leggi e salva ID dal dialog Issues
               await waitListStable();
