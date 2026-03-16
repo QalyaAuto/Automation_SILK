@@ -197,7 +197,8 @@ test.describe.serial('Verifica criteri per SDP', () => {
 
                 await manualPom.inserisci_sinossi(opt(row['Titolo']));
                 await manualPom.inserisci_descrizione(opt(row['Descrizione']));
-
+  
+                
                 await pause();
                 await manualPom.scelta_issue();
                 await manualPom.scelta_prodotto_sw(opt(row['AP']));
