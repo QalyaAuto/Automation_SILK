@@ -50,35 +50,45 @@ export class ManualTesting {
   }
 
   async click_radiobutton_create_new_issue() {
+    console.log('[radiobutton] Click su "Create new issue", attendo che Synopsis sia abilitato...');
     await this.safeClick(this.page.locator("//span[label[normalize-space(text())='Create new issue']]//input[@type='radio']"));
-    // Aspetta che il campo Synopsis sia abilitato (la sezione del form è pronta)
     await this.page.waitForFunction(() => {
       const el = document.querySelector("input[bcauid='synopsis']") as HTMLInputElement | null;
       return el !== null && !el.disabled;
     }, { timeout: 10_000 });
+    console.log('[radiobutton] ✓ Synopsis abilitato, form pronto');
   }
 
   async inserisci_sinossi(titolo: string) {
+    console.log(`[sinossi] Inserisco: "${titolo}"`);
     await this.safeFill(this.page.locator("(//div[div[contains(text(),'Synopsis:')]]//input[@type='text'])[1]"), titolo);
+    console.log('[sinossi] ✓ Sinossi inserita');
   }
 
   async inserisci_descrizione(descrizione: string) {
+    console.log(`[descrizione] Inserisco descrizione (${descrizione.length} caratteri)`);
     const locator = this.page.locator("//div[div[contains(text(),'Description:')]]//textarea[@role='textbox']");
     const el = await this.retryUntilVisible(locator);
     const oldText = await el.inputValue();
     const nuovo = oldText ? `${oldText}\n\n${descrizione.trim()}` : descrizione.trim();
     await el.fill(nuovo);
+    console.log('[descrizione] ✓ Descrizione inserita');
   }
 
   async scelta_issue() {
+    console.log('[issue_type] Seleziono: BUG');
     await this.page.locator("select[aria-label='Issue Type:']").selectOption({ value: "BUG" });
-    console.log("Tipo issue scelta correttamente: BUG");
+    const selected = await this.page.locator("select[aria-label='Issue Type:']").inputValue();
+    console.log(`[issue_type] ✓ Valore selezionato: "${selected}"`);
   }
 
   async scelta_prodotto_sw(prodotto_sw: string, expectedBuild: string, expectedComponente: string) {
+    console.log(`[prodotto_sw] Cerco opzione contenente: "${prodotto_sw}"`);
     await this.select_option_per_value_contains("Prodotto SW:", prodotto_sw);
+    const selected = await this.page.locator("select[aria-label='Prodotto SW:']").inputValue();
+    console.log(`[prodotto_sw] ✓ Selezionato: "${selected}"`);
+    console.log(`[prodotto_sw] Attendo che Build contenga "${expectedBuild}" E Componente contenga "${expectedComponente}"...`);
 
-    // Dopo il cambio, aspetta che le opzioni attese compaiano in Build E Componente
     await this.page.waitForFunction(
       ([build, comp]: [string, string]) => {
         const buildEl = document.querySelector("select[aria-label='Build Find :']") as HTMLSelectElement | null;
@@ -89,62 +99,78 @@ export class ManualTesting {
       },
       [expectedBuild, expectedComponente] as [string, string],
       { timeout: 15_000 }
-    ).catch(() => console.warn('[scelta_prodotto_sw] Valori attesi non trovati nelle dropdown entro timeout, proseguo comunque'));
+    ).catch(() => console.warn(`[prodotto_sw] ⚠ Timeout: opzioni attese non trovate in Build/Componente, proseguo comunque`));
 
-    console.log("prodotto sw scelto correttamente: " + prodotto_sw);
+    const buildOpts = await this.page.locator("select[aria-label='Build Find :'] option").allInnerTexts();
+    const compOpts  = await this.page.locator("select[aria-label*='Componente'] option").allInnerTexts();
+    console.log(`[prodotto_sw] Build disponibili: [${buildOpts.join(' | ')}]`);
+    console.log(`[prodotto_sw] Componenti disponibili: [${compOpts.join(' | ')}]`);
   }
 
   async scelta_build(build_find: string) {
+    console.log(`[build] Cerco opzione contenente: "${build_find}"`);
     await this.select_option_per_value_contains("Build Find :", build_find);
-    console.log("Build scelta correttamente: " + build_find);
+    const selected = await this.page.locator("select[aria-label='Build Find :']").inputValue();
+    console.log(`[build] ✓ Selezionato: "${selected}"`);
   }
 
   async scelta_ambito() {
-    const select = this.page.locator("select[aria-label='Ambito Find:']");
-    await select.selectOption({ value: "Ambiente di Collaudo Integrato" });
+    const TARGET = 'Ambiente di Collaudo Integrato';
+    const PLACEHOLDER = '** SEGLIERE AMBITO CORRETTAMENTE **';
+    console.log(`[ambito] Seleziono: "${TARGET}"`);
+    await this.page.locator("select[aria-label='Ambito Find:']").selectOption({ value: TARGET });
 
-    // Verifica che il valore non sia il placeholder E sia quello atteso
-    await this.page.waitForFunction(() => {
-      const el = document.querySelector("select[aria-label='Ambito Find:']") as HTMLSelectElement | null;
-      return el
-        ? el.value !== '** SEGLIERE AMBITO CORRETTAMENTE **' && el.value === 'Ambiente di Collaudo Integrato'
-        : false;
-    }, { timeout: 5_000 })
-      .catch(() => console.warn('[scelta_ambito] Ambito non valorizzato correttamente, proseguo comunque'));
+    await this.page.waitForFunction(
+      ([target, placeholder]: [string, string]) => {
+        const el = document.querySelector("select[aria-label='Ambito Find:']") as HTMLSelectElement | null;
+        return el ? el.value !== placeholder && el.value === target : false;
+      },
+      [TARGET, PLACEHOLDER] as [string, string],
+      { timeout: 5_000 }
+    ).catch(async () => {
+      const actual = await this.page.locator("select[aria-label='Ambito Find:']").inputValue().catch(() => 'non leggibile');
+      throw new Error(`[ambito] ✗ FALLIMENTO: valore atteso "${TARGET}", trovato "${actual}"`);
+    });
 
-    console.log("Ambito scelto correttamente: Ambiente di Collaudo Integrato");
+    console.log(`[ambito] ✓ Ambito confermato: "${TARGET}"`);
   }
 
-    async scelta_componente(componente: string) {
-        const select = this.page.locator("select[aria-label*='Componente']");
+  async scelta_componente(componente: string) {
+    const select = this.page.locator("select[aria-label*='Componente']");
+    console.log(`[componente] Cerco opzione contenente: "${componente}"`);
 
-        // Attende che la dropdown contenga l'opzione attesa dopo il cambio di ambito
-        if (componente) {
-            await this.page.waitForFunction(
-                (val: string) => {
-                    const el = document.querySelector(`select[aria-label*='Componente']`) as HTMLSelectElement | null;
-                    return el ? Array.from(el.options).some(o => o.value.includes(val) || o.text.includes(val)) : false;
-                },
-                componente,
-                { timeout: 10_000 }
-            ).catch(() => console.warn(`[scelta_componente] Opzione "${componente}" non trovata entro timeout, proseguo comunque`));
-        }
-
-        const optionsCount = await select.locator("option").count();
-        if (optionsCount === 0) {
-            console.log(" Nessuna option disponibile nella select 'Componente'.");
-            return;
-        }
-
-        await this.select_option_per_value_contains_aria_contains("Componente", componente);
-        console.log("Componente scelto correttamente: "+componente);
+    if (componente) {
+      await this.page.waitForFunction(
+        (val: string) => {
+          const el = document.querySelector(`select[aria-label*='Componente']`) as HTMLSelectElement | null;
+          return el ? Array.from(el.options).some(o => o.value.includes(val) || o.text.includes(val)) : false;
+        },
+        componente,
+        { timeout: 10_000 }
+      ).catch(() => console.warn(`[componente] ⚠ Opzione "${componente}" non trovata entro timeout, proseguo comunque`));
     }
 
-    async scelta_severity(severita: string) {
-        const numero = severita.trim().split(" ")[0]; 
-        await this.select_option_per_value_contains("Severità:", numero);
-        console.log("Severity scelta correttamente: "+severita+" con numero: "+numero); 
+    const optionsCount = await select.locator("option").count();
+    const allOpts = await select.locator("option").allInnerTexts();
+    console.log(`[componente] Opzioni disponibili (${optionsCount}): [${allOpts.join(' | ')}]`);
+
+    if (optionsCount === 0) {
+      console.warn('[componente] ⚠ Nessuna opzione disponibile nella select Componente');
+      return;
     }
+
+    await this.select_option_per_value_contains_aria_contains("Componente", componente);
+    const selected = await select.inputValue();
+    console.log(`[componente] ✓ Selezionato: "${selected}"`);
+  }
+
+  async scelta_severity(severita: string) {
+    const numero = severita.trim().split(" ")[0];
+    console.log(`[severity] Valore datapool: "${severita}" → cerco opzione contenente: "${numero}"`);
+    await this.select_option_per_value_contains("Severità:", numero);
+    const selected = await this.page.locator("select[aria-label='Severità:']").inputValue();
+    console.log(`[severity] ✓ Selezionato: "${selected}"`);
+  }
 
 
   async click_ok_finale() {
