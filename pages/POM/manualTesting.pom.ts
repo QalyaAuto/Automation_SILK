@@ -71,80 +71,36 @@ export class ManualTesting {
   }
 
   async scelta_issue() {
-    // Snapshot primo valore di Prodotto SW prima della selezione
-    const initialProdotto = await this.page.evaluate(() => {
-      const el = document.querySelector("select[aria-label='Prodotto SW:']") as HTMLSelectElement | null;
-      return el?.options[0]?.value ?? '';
-    });
-
     await this.page.locator("select[aria-label='Issue Type:']").selectOption({ value: "BUG" });
-
-    // Aspetta che Prodotto SW si aggiorni
-    await this.page.waitForFunction((initial: string) => {
-      const el = document.querySelector("select[aria-label='Prodotto SW:']") as HTMLSelectElement | null;
-      return el ? el.options[0]?.value !== initial : false;
-    }, initialProdotto, { timeout: 10_000 })
-      .catch(() => console.warn('[scelta_issue] Prodotto SW non aggiornato, proseguo'));
-
     console.log("Tipo issue scelta correttamente: BUG");
   }
 
-
-  async scelta_prodotto_sw(prodotto_sw: string) {
-    // Snapshot primo valore di Build prima della selezione
-    const initialBuild = await this.page.evaluate(() => {
-      const el = document.querySelector("select[aria-label='Build Find :']") as HTMLSelectElement | null;
-      return el?.options[0]?.value ?? '';
-    });
-
+  async scelta_prodotto_sw(prodotto_sw: string, expectedBuild: string, expectedComponente: string) {
     await this.select_option_per_value_contains("Prodotto SW:", prodotto_sw);
 
-    // Aspetta che Build si aggiorni (il dropdown successivo nella catena)
-    await this.page.waitForFunction((initial: string) => {
-      const el = document.querySelector("select[aria-label='Build Find :']") as HTMLSelectElement | null;
-      return el ? el.options[0]?.value !== initial : false;
-    }, initialBuild, { timeout: 15_000 })
-      .catch(() => console.warn('[scelta_prodotto_sw] Build non aggiornato, proseguo comunque'));
+    // Dopo il cambio, aspetta che le opzioni attese compaiano in Build E Componente
+    await this.page.waitForFunction(
+      ([build, comp]: [string, string]) => {
+        const buildEl = document.querySelector("select[aria-label='Build Find :']") as HTMLSelectElement | null;
+        const compEl  = document.querySelector("select[aria-label*='Componente']") as HTMLSelectElement | null;
+        const buildOk = !build || (buildEl ? Array.from(buildEl.options).some(o => o.value.includes(build) || o.text.includes(build)) : false);
+        const compOk  = !comp  || (compEl  ? Array.from(compEl.options) .some(o => o.value.includes(comp)  || o.text.includes(comp))  : false);
+        return buildOk && compOk;
+      },
+      [expectedBuild, expectedComponente] as [string, string],
+      { timeout: 15_000 }
+    ).catch(() => console.warn('[scelta_prodotto_sw] Valori attesi non trovati nelle dropdown entro timeout, proseguo comunque'));
 
     console.log("prodotto sw scelto correttamente: " + prodotto_sw);
   }
 
   async scelta_build(build_find: string) {
-    // Snapshot primo valore di Ambito prima della selezione
-    const initialAmbito = await this.page.evaluate(() => {
-      const el = document.querySelector("select[aria-label='Ambito Find:']") as HTMLSelectElement | null;
-      return el?.options[0]?.value ?? '';
-    });
-
     await this.select_option_per_value_contains("Build Find :", build_find);
-
-    // Aspetta che Ambito si aggiorni
-    await this.page.waitForFunction((initial: string) => {
-      const el = document.querySelector("select[aria-label='Ambito Find:']") as HTMLSelectElement | null;
-      return el ? el.options[0]?.value !== initial : false;
-    }, initialAmbito, { timeout: 15_000 })
-      .catch(() => console.warn('[scelta_build] Ambito non aggiornato, proseguo'));
-
     console.log("Build scelta correttamente: " + build_find);
   }
 
-
   async scelta_ambito() {
-    // Snapshot primo valore di Componente prima della selezione
-    const initialComponente = await this.page.evaluate(() => {
-      const el = document.querySelector("select[aria-label*='Componente']") as HTMLSelectElement | null;
-      return el?.options[0]?.value ?? '';
-    });
-
     await this.page.locator("select[aria-label='Ambito Find:']").selectOption({ value: "Ambiente di Collaudo Integrato" });
-
-    // Aspetta che Componente si aggiorni (il dropdown successivo nella catena)
-    await this.page.waitForFunction((initial: string) => {
-      const el = document.querySelector("select[aria-label*='Componente']") as HTMLSelectElement | null;
-      return el ? el.options[0]?.value !== initial : false;
-    }, initialComponente, { timeout: 15_000 })
-      .catch(() => console.warn('[scelta_ambito] Componente non aggiornato, proseguo comunque'));
-
     console.log("Ambito scelto correttamente: Ambiente di Collaudo Integrato");
   }
 

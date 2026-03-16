@@ -201,7 +201,7 @@ test.describe.serial('Verifica criteri per SDP', () => {
                 
                 await pause();
                 await manualPom.scelta_issue();
-                await manualPom.scelta_prodotto_sw(opt(row['AP']));
+                await manualPom.scelta_prodotto_sw(opt(row['AP']), opt(row['Build'] ?? ''), opt(row['PK']));
                 await manualPom.scelta_build(opt(row['Build'] ?? ''));
                 await manualPom.scelta_ambito();
                 await manualPom.scelta_componente(opt(row['PK']));
