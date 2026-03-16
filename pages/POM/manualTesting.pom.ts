@@ -51,6 +51,11 @@ export class ManualTesting {
 
   async click_radiobutton_create_new_issue() {
     await this.safeClick(this.page.locator("//span[label[normalize-space(text())='Create new issue']]//input[@type='radio']"));
+    // Aspetta che il campo Synopsis sia abilitato (la sezione del form è pronta)
+    await this.page.waitForFunction(() => {
+      const el = document.querySelector("input[bcauid='synopsis']") as HTMLInputElement | null;
+      return el !== null && !el.disabled;
+    }, { timeout: 10_000 });
   }
 
   async inserisci_sinossi(titolo: string) {
@@ -65,42 +70,81 @@ export class ManualTesting {
     await el.fill(nuovo);
   }
 
-  async scelta_issue () {
-        await this.page.locator("select[aria-label='Issue Type:']").selectOption({ value: "BUG" });
-        console.log("Tipo issue scelta correttamente: BUG")
-    }
+  async scelta_issue() {
+    // Snapshot primo valore di Prodotto SW prima della selezione
+    const initialProdotto = await this.page.evaluate(() => {
+      const el = document.querySelector("select[aria-label='Prodotto SW:']") as HTMLSelectElement | null;
+      return el?.options[0]?.value ?? '';
+    });
+
+    await this.page.locator("select[aria-label='Issue Type:']").selectOption({ value: "BUG" });
+
+    // Aspetta che Prodotto SW si aggiorni
+    await this.page.waitForFunction((initial: string) => {
+      const el = document.querySelector("select[aria-label='Prodotto SW:']") as HTMLSelectElement | null;
+      return el ? el.options[0]?.value !== initial : false;
+    }, initialProdotto, { timeout: 10_000 })
+      .catch(() => console.warn('[scelta_issue] Prodotto SW non aggiornato, proseguo'));
+
+    console.log("Tipo issue scelta correttamente: BUG");
+  }
 
 
-  async scelta_prodotto_sw (prodotto_sw : string) {
-        // Cattura il valore attuale della prima opzione di Componente prima della selezione
-        const initialComponente = await this.page.evaluate(() => {
-            const el = document.querySelector("select[aria-label*='Componente']") as HTMLSelectElement | null;
-            return el?.options[0]?.value ?? '';
-        });
+  async scelta_prodotto_sw(prodotto_sw: string) {
+    // Snapshot primo valore di Build prima della selezione
+    const initialBuild = await this.page.evaluate(() => {
+      const el = document.querySelector("select[aria-label='Build Find :']") as HTMLSelectElement | null;
+      return el?.options[0]?.value ?? '';
+    });
 
-        await this.select_option_per_value_contains("Prodotto SW:",prodotto_sw);
+    await this.select_option_per_value_contains("Prodotto SW:", prodotto_sw);
 
-        // Aspetta che la dropdown Componente si aggiorni (il valore iniziale deve cambiare)
-        await this.page.waitForFunction((initial: string) => {
-            const el = document.querySelector("select[aria-label*='Componente']") as HTMLSelectElement | null;
-            if (!el) return false;
-            return el.options[0]?.value !== initial;
-        }, initialComponente, { timeout: 15_000 });
+    // Aspetta che Build si aggiorni (il dropdown successivo nella catena)
+    await this.page.waitForFunction((initial: string) => {
+      const el = document.querySelector("select[aria-label='Build Find :']") as HTMLSelectElement | null;
+      return el ? el.options[0]?.value !== initial : false;
+    }, initialBuild, { timeout: 15_000 });
 
-        console.log("prodotto sw scelto correttamente: "+prodotto_sw)
-    }
+    console.log("prodotto sw scelto correttamente: " + prodotto_sw);
+  }
 
-    async scelta_build (build_find : string) {
-        await this.select_option_per_value_contains("Build Find :",build_find);
-        console.log("Build scelta correttamente: "+build_find);
-    }
+  async scelta_build(build_find: string) {
+    // Snapshot primo valore di Ambito prima della selezione
+    const initialAmbito = await this.page.evaluate(() => {
+      const el = document.querySelector("select[aria-label='Ambito Find:']") as HTMLSelectElement | null;
+      return el?.options[0]?.value ?? '';
+    });
+
+    await this.select_option_per_value_contains("Build Find :", build_find);
+
+    // Aspetta che Ambito si aggiorni
+    await this.page.waitForFunction((initial: string) => {
+      const el = document.querySelector("select[aria-label='Ambito Find:']") as HTMLSelectElement | null;
+      return el ? el.options[0]?.value !== initial : false;
+    }, initialAmbito, { timeout: 15_000 })
+      .catch(() => console.warn('[scelta_build] Ambito non aggiornato, proseguo'));
+
+    console.log("Build scelta correttamente: " + build_find);
+  }
 
 
-  async scelta_ambito () {
-        await this.page.waitForTimeout(1_500);
-        await this.page.locator("select[aria-label='Ambito Find:']").selectOption({ value: "Ambiente di Collaudo Integrato" });
-        console.log("Ambito scelto correttamente: Ambiente di Collaudo Integrato");
-    }
+  async scelta_ambito() {
+    // Snapshot primo valore di Componente prima della selezione
+    const initialComponente = await this.page.evaluate(() => {
+      const el = document.querySelector("select[aria-label*='Componente']") as HTMLSelectElement | null;
+      return el?.options[0]?.value ?? '';
+    });
+
+    await this.page.locator("select[aria-label='Ambito Find:']").selectOption({ value: "Ambiente di Collaudo Integrato" });
+
+    // Aspetta che Componente si aggiorni (il dropout successivo nella catena)
+    await this.page.waitForFunction((initial: string) => {
+      const el = document.querySelector("select[aria-label*='Componente']") as HTMLSelectElement | null;
+      return el ? el.options[0]?.value !== initial : false;
+    }, initialComponente, { timeout: 15_000 });
+
+    console.log("Ambito scelto correttamente: Ambiente di Collaudo Integrato");
+  }
 
     async scelta_componente(componente: string) {
         const select = this.page.locator("select[aria-label*='Componente']");
@@ -135,8 +179,28 @@ export class ManualTesting {
 
 
   async click_ok_finale() {
-        await this.safeClick(this.page.locator("//button[@id='ok']"));
-  };
+    await this.safeClick(this.page.locator("//button[@id='ok']"));
+  }
+
+  async verifica_errore_silk_central(): Promise<string | null> {
+    // Attende un breve momento per dare tempo alla modale di apparire
+    await this.page.waitForTimeout(1_000);
+    const dialog = this.page.locator('div').filter({ hasText: 'Silk Central Message' }).last();
+    const isVisible = await dialog.isVisible().catch(() => false);
+    if (!isVisible) return null;
+    // Legge il messaggio di errore per il log
+    const message = await dialog.innerText().catch(() => 'messaggio non leggibile');
+    return message.replace('Silk Central Message', '').trim();
+  }
+
+  async chiudi_errore_e_annulla(): Promise<void> {
+    // Clicca OK nella modale "Silk Central Message"
+    const errorDialog = this.page.locator('div').filter({ hasText: 'Silk Central Message' }).last();
+    await this.safeClick(errorDialog.locator('button').filter({ hasText: /^OK$/ }));
+    await this.page.waitForTimeout(500);
+    // Clicca Cancel sul form principale per chiuderlo
+    await this.safeClick(this.page.locator("button[bcauid='cancel']"));
+  }
 
   async apri_issues_requisito(criterio: string) {
     await this.click_requisito_violato(criterio);
