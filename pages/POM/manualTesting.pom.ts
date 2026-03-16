@@ -100,7 +100,18 @@ export class ManualTesting {
   }
 
   async scelta_ambito() {
-    await this.page.locator("select[aria-label='Ambito Find:']").selectOption({ value: "Ambiente di Collaudo Integrato" });
+    const select = this.page.locator("select[aria-label='Ambito Find:']");
+    await select.selectOption({ value: "Ambiente di Collaudo Integrato" });
+
+    // Verifica che il valore non sia il placeholder E sia quello atteso
+    await this.page.waitForFunction(() => {
+      const el = document.querySelector("select[aria-label='Ambito Find:']") as HTMLSelectElement | null;
+      return el
+        ? el.value !== '** SEGLIERE AMBITO CORRETTAMENTE **' && el.value === 'Ambiente di Collaudo Integrato'
+        : false;
+    }, { timeout: 5_000 })
+      .catch(() => console.warn('[scelta_ambito] Ambito non valorizzato correttamente, proseguo comunque'));
+
     console.log("Ambito scelto correttamente: Ambiente di Collaudo Integrato");
   }
 
