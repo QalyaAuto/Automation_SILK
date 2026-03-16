@@ -218,8 +218,8 @@ export class ManualTesting {
     const row = dialog.locator(`tbody:not([style*="display: none"]) tr:has(div[bcauid^='delete_'])`).first();
     await row.waitFor({ state: 'visible' });
 
-    // L'ID numerico è nella seconda <td> della riga
-    const idCell = row.locator('td').nth(1).locator('div');
+    // L'ID numerico è nella seconda <td> della riga — innerText sulla td evita ambiguità con i div annidati
+    const idCell = row.locator('td').nth(1);
     return (await idCell.innerText()).trim();
   }
 
