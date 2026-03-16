@@ -117,22 +117,29 @@ export class ManualTesting {
   async scelta_ambito() {
     const TARGET = 'Ambiente di Collaudo Integrato';
     const PLACEHOLDER = '** SEGLIERE AMBITO CORRETTAMENTE **';
-    console.log(`[ambito] Seleziono: "${TARGET}"`);
-    await this.page.locator("select[aria-label='Ambito Find:']").selectOption({ value: TARGET });
+    const MAX_ATTEMPTS = 5;
+    const select = this.page.locator("select[aria-label='Ambito Find:']");
 
-    await this.page.waitForFunction(
-      ([target, placeholder]: [string, string]) => {
-        const el = document.querySelector("select[aria-label='Ambito Find:']") as HTMLSelectElement | null;
-        return el ? el.value !== placeholder && el.value === target : false;
-      },
-      [TARGET, PLACEHOLDER] as [string, string],
-      { timeout: 5_000 }
-    ).catch(async () => {
-      const actual = await this.page.locator("select[aria-label='Ambito Find:']").inputValue().catch(() => 'non leggibile');
-      throw new Error(`[ambito] ✗ FALLIMENTO: valore atteso "${TARGET}", trovato "${actual}"`);
-    });
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      console.log(`[ambito] Tentativo ${attempt}/${MAX_ATTEMPTS}: seleziono "${TARGET}"`);
+      await select.selectOption({ value: TARGET });
 
-    console.log(`[ambito] ✓ Ambito confermato: "${TARGET}"`);
+      // Attende 1s per dare tempo al server di eventualmente resettare il valore
+      await this.page.waitForTimeout(1_000);
+
+      const actual = await select.inputValue().catch(() => 'non leggibile');
+      console.log(`[ambito] Valore dopo ${attempt}s di attesa: "${actual}"`);
+
+      if (actual !== PLACEHOLDER && actual === TARGET) {
+        console.log(`[ambito] ✓ Ambito confermato: "${TARGET}" (tentativo ${attempt})`);
+        return;
+      }
+
+      console.warn(`[ambito] ⚠ Valore resettato a "${actual}", riprovo...`);
+    }
+
+    const final = await select.inputValue().catch(() => 'non leggibile');
+    throw new Error(`[ambito] ✗ FALLIMENTO dopo ${MAX_ATTEMPTS} tentativi: valore atteso "${TARGET}", trovato "${final}"`);
   }
 
   async scelta_componente(componente: string) {
